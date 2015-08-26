@@ -4,6 +4,7 @@
 import pandas as pd
 import csv
 import re
+import jieba
 
 weibo_train_data = None
 weibo_predict_data = None
@@ -27,6 +28,25 @@ def genResult(file, data):
 	f=open('result/test.txt','w')
 	f.write(context)
 	f.close()
+
+def cleanText(contexts):
+	f=open('data/stopwords.txt','r')
+	stopwords = [l.strip() for l in f.readlines()]
+	for i in range(len(stopwords)):
+		stopwords[i] = stopwords[i].decode('utf8')
+	f.close()
+
+	cleans = []
+	for context in contexts:
+	    context = re.sub("http://.*\w$","",context)
+	    #context = re.sub("\[.{0,4}\]","",context)
+	    #context = re.sub("\\pP|\\pS", "",context)
+	    context = re.sub("\s","",context)
+	    context = re.sub("\d","",context)
+	    text = jieba.lcut(context)
+	    clean = [t for t in text if t not in stopwords]
+	    cleans.append(clean)
+	return pd.Series(cleans)
 
 if __name__ == "__main__":
 	loadData()

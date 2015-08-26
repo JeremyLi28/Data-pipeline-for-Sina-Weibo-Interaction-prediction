@@ -10,3 +10,5 @@ test.py
 data/*
 
 result/*
+
+.ipynb_checkpoints/*
