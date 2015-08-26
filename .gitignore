@@ -6,3 +6,7 @@ data/weibo_predict_data.txt
 test.py
 
 *.pyc
+
+data/*
+
+result/*
