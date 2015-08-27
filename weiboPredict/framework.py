@@ -2,9 +2,13 @@
 # Usage: basic operations
 # Author: Chen Li
 import pandas as pd
+import numpy as np
 import csv
 import re
 import jieba
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn import linear_model
+from sklearn.externals import joblib
 
 weibo_train_data = None
 weibo_predict_data = None
@@ -36,6 +40,7 @@ def cleanText(contexts):
 		stopwords[i] = stopwords[i].decode('utf8')
 	f.close()
 
+	i=0
 	cleans = []
 	for context in contexts:
 	    context = re.sub("http://.*\w$","",context)
@@ -46,7 +51,46 @@ def cleanText(contexts):
 	    text = jieba.lcut(context)
 	    clean = [t for t in text if t not in stopwords]
 	    cleans.append(clean)
+	    i=i+1
+	    if i%10000==0:
+	    	print str(i)+'/'+str(len(contexts))
 	return pd.Series(cleans)
+
+def train(start,end,label,feature_type,model_type):
+	global weibo_train_data
+	train_context_clean = Series.from_csv('data/train_context_clean.csv')
+	weibo_train_data['context_clean'] = train_context_clean
+	if model_type=="LR":
+		vectorizer = CountVectorizer(analyzer = "word",   \
+                             tokenizer = None,    \
+                             preprocessor = None, \
+                             stop_words = None,   \
+                             max_features = 100) 
+		train_features = vectorizer.fit_transform(								/
+							weibo_train_data[(weibo_train_data['time']<=end) 		/
+							& (fw.weibo_train_data['time']>=start)].context_clean)
+		train_features = train_features.toarray()
+		train_labels = weibo_train_data[(weibo_train_data['time']<=end) 		/
+							& (fw.weibo_train_data['time']>=start)][label]
+
+		model = linear_model.LinearRegression()
+		model.fit(train_features,train_labels)
+		print '====='+feature_type+'_'+model_type+'====='
+	# The coefficients
+	print 'Coefficients: \n', model.coef_
+	# The mean square error
+	print "Residual sum of squares: %.2f" % /
+		np.mean((model.predict(train_features) - train_labels) ** 2)
+	# Explained variance score: 1 is perfect prediction
+	print 'Variance score: %.2f' % model.score(train_features, train_labels)
+
+	joblib.dump(model,feature_type+'_'+model_type+'_'+start+'_'+end+'.model')
+	return model
+
+
+
+
+
 
 if __name__ == "__main__":
 	loadData()
