@@ -9,6 +9,6 @@ test.py
 
 data/*
 
-result/*
+results/*
 
 .ipynb_checkpoints/*
