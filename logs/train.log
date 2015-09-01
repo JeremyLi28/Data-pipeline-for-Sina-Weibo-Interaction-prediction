@@ -1,1 +1,1 @@
-,train_data,features,model,label,parameters,sos,vs,train_time
+,model_name,features,model_type,label,model_parameters,evaluation,model_address,train_time

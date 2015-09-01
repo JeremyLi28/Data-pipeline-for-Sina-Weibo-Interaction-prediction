@@ -26,11 +26,11 @@ def loadData():
 		quoting=csv.QUOTE_NONE,names=['uid','mid','time','context'])
 	weibo_predict_data.ix[78336].time = '2015-01-04'
 	global train_log
-	train_log = pd.read_csv('../logs/train.log')
+	train_log = pd.DataFrame.from_csv('../logs/train.log')
 	global test_log
-	test_log = pd.read_csv('../logs/test.log')
+	test_log = pd.DataFrame.from_csv('../logs/test.log')
 	global features_log
-	features_log = pd.read_csv('../logs/features.log')
+	features_log = pd.DataFrame.from_csv('../logs/features.log')
 
 def genResult(file, data):
 	data.to_csv('../results/'+file+'.csv',sep=',',float_format='%d')
@@ -68,51 +68,62 @@ def cleanText(contexts):
 	    cleans = pd.Series(cleans)
 	return cleans
 
-def train(train_data,features,model,label,**parameters):
+def train(features,model_type,label,**model_parameters):
+
+	# load features
+	print "loading features..."
+	global features_log
+	train_features = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[0]].feature_address)
+	if len(features) > 1:
+		for i in range(1,len(features)):
+			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address)
+			train_features = pd.concat(train_features,tmp,axis=1)
+
+	# load label
+	print "loading label..."
 	global weibo_train_data
-	train_context_clean = pd.Series.from_csv('../data/train_context_clean.csv')
-	weibo_train_data['context_clean'] = train_context_clean
+	label_time = features_log[features_log.feature_name==features[0]].data_time
+	train_labels = weibo_train_data[(weibo_train_data['time']<=label_time[1]) \
+									& (weibo_train_data['time']>=label_time[0])][label]
+
+	# train model
+	print "training model..."
 	if model_type=="LR":
-		vectorizer = CountVectorizer(analyzer = "word",   \
-                             tokenizer = None,    \
-                             preprocessor = None, \
-                             stop_words = None,   \
-                             parameters['max_features']) 
-		train_features = vectorizer.fit_transform(                  \
-							weibo_train_data[(weibo_train_data['time']<=end) 		\
-							& (weibo_train_data['time']>=start)].context_clean)
-		train_features = train_features.toarray()
-		train_labels = weibo_train_data[(weibo_train_data['time']<=end) 		\
-							& (weibo_train_data['time']>=start)][label]
 		start = time.time() # Start time
 		model = linear_model.LinearRegression()
 		model.fit(train_features,train_labels)
-
 		end = time.time()
 		elapsed = end - start
 
-		print '====='+feature_type+'_'+model_type+'====='
-	# The coefficients
-	print 'Coefficients: \n', model.coef_
-	# The mean square error
-	print "Residual sum of squares: %.2f" % \
-		np.mean((model.predict(train_features) - train_labels) ** 2)
-	# Explained variance score: 1 is perfect prediction
-	print 'Variance score: %.2f' % model.score(train_features, train_labels)
+	# write log
+	print "writing log..."
+	coef = model.coef_
+	sos = np.mean((model.predict(train_features) - train_labels) ** 2)
+	vs = model.score(train_features, train_labels)
+	model_name = '_'.join(features.tolist())+'_'+model_type+'_'
+	for k, v in model_parameters:
+		model_name += str(k)+'_'+str(v)
+	model_name += label	
+	model_address ='../models/'+model_name+'.model'
+	log = [model_name,features,model_type,label,model_parameters,{'coef':coef,'sos':sos,'vs':vs},model_address,elapsed]
+	if model_name in train_log.model_name.tolist():
+		train_log[train_log.model_name==model_name] = log
+	else:
+		train_log.loc[len(train_log)] = log
+	train_log.to_csv('../logs/train.log')
+
+	# save model
+	print "saving model..."
+	joblib.dump(model,model_address)
+
+	# print results
+	print '====='+'Results'+'====='
+	print 'Coefficients: \n', coef
+	print "Residual sum of squares: %.2f" % sos
+	print 'Variance score: %.2f' % vs
 	print "Train time: ", elapsed, "seconds."
 
-	model_name = '../models/'+feature_type+'_'+model_type+'_'+label+'_' \
-		+start+'_'+end
-	vectorizer_name = '../others/'+feature_type+'_'+model_type+'_' \
-		+start+'_'+end
-	for k, v in parameters:
-		model_name += str(k)+'_'+str(v)
-		vectorizer_name += str(k)+'_'+str(v)
-	model_name +='.model'
-	vectorizer_name += '.vectorizer'
-	joblib.dump(model,model_name)
-	joblib.dump(vectorizer,vectorizer_name)
-	return model,vectorizer
+	return model
 
 def test(data_start,data_end,model_start,model_end,feature_type,model_type,evaluation=True):
 	global weibo_train_data
@@ -192,7 +203,7 @@ def sgn(x):
 	x[x<=0] = 0
 	return x
 
-def BOW(data_time=['2014-07-01','2014-12-31'],max_features=100,fit=False):
+def BOW(data_time=['2014-07-01','2014-12-31'],vec_time=['2014-07-01','2014-12-31'],max_features=100,fit=False):
 	global weibo_train_data
 	global weibo_predict_data
 	global features_log
@@ -203,28 +214,37 @@ def BOW(data_time=['2014-07-01','2014-12-31'],max_features=100,fit=False):
 		data = weibo_train_data
 		data['context_clean'] = pd.Series.from_csv('../data/train_context_clean.csv')
 	if fit==True:
+		data_time = vec_time
 		vectorizer = CountVectorizer(analyzer = "word",   \
                              tokenizer = None,    \
                              preprocessor = None, \
                              stop_words = None,   \
                              max_features=max_features) 
 		features = vectorizer.fit_transform(                  \
-							data[(data['time']<=data[1]) 		\
-							& (data['time']>=data[0])].context_clean)
-		vectorizer.dump(vectorizer,'../others/'+str(max_features)+'.vectorizer')
+							data[(data['time']<=data_time[1]) 		\
+							& (data['time']>=data_time[0])].context_clean)
+		joblib.dump(vectorizer,'../others/'+'_'.join(vec_time)+'_'+str(max_features)+'.vectorizer')
 	else:
-		vectorizer = joblib.load('../others/'+str(max_features)+'.vectorizer'))
+		vectorizer = joblib.load('../others/'+'_'.join(vec_time)+'_'+str(max_features)+'.vectorizer')
 		features = vectorizer.transform(                  \
 					data[(data['time']<=data_time[1]) 		\
 					& (data['time']>=data_time[0])].context_clean)
-	features = pd.DataFrame(features)
-	feature_name = 'BOW_'+'_'.join(data_time)+'_'+str(max_features)
-	features.to_csv('../features/'+ feature_name+'.feature')
+	columns = ['BOW_'+str(i+1) for i in range(max_features)]
+	features = pd.DataFrame(features.toarray(),columns=columns)
+	feature_name = 'BOW_'+'_'.join(data_time)+'_'+'_'.join(vec_time)+'_'+str(max_features)
+	feature_address = '../features/'+ feature_name+'.feature'
+	features.to_csv(feature_address)
 	description = "Bag of Words in word count from "+str(data_time[0])+" to "+ \
 	data_time[1]+" using top "+str(max_features)+" words"
-	features_log.loc[len(features_log)]=[feature_name,description,{'max_features':max_features}]
+
+	log = [feature_name,'BOW',data_time,{'max_features':max_features,'vec_time':vec_time},'I',feature_address,description]
+	if feature_name in features_log.feature_name.tolist():
+		features_log[features_log.feature_name==feature_name] = log
+	else:
+		features_log.loc[len(features_log)] = log
 	features_log.to_csv('../logs/features.log')
-return features
+
+	return features
 
 
 
