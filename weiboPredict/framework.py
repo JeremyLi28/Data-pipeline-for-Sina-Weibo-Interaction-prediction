@@ -7,6 +7,7 @@ import csv
 import re
 import jieba
 import time
+import json
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn import linear_model
 from sklearn.externals import joblib
@@ -27,10 +28,15 @@ def loadData():
 	weibo_predict_data.ix[78336].time = '2015-01-04'
 	global train_log
 	train_log = pd.DataFrame.from_csv('../logs/train.log')
+	train_log.features = train_log.features.map(lambda x: json.loads(x))
+	train_log.model_parameters = train_log.model_parameters.map(lambda x: json.loads(x))
+	train_log.evaluation = train_log.evaluation.map(lambda x: json.loads(x))
 	global test_log
 	test_log = pd.DataFrame.from_csv('../logs/test.log')
 	global features_log
 	features_log = pd.DataFrame.from_csv('../logs/features.log')
+	features_log.data_time = features_log.data_time.map(lambda x: json.loads(x))
+	features_log.parameters = features_log.parameters.map(lambda x:json.loads(x))
 
 def genResult(file, data):
 	data.to_csv('../results/'+file+'.csv',sep=',',float_format='%d')
@@ -73,18 +79,17 @@ def train(features,model_type,label,**model_parameters):
 	# load features
 	print "loading features..."
 	global features_log
-	train_features = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[0]].feature_address)
+	train_features = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[0]].feature_address.tolist()[0])
 	if len(features) > 1:
 		for i in range(1,len(features)):
-			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address)
+			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address.tolist()[0])
 			train_features = pd.concat(train_features,tmp,axis=1)
 
 	# load label
 	print "loading label..."
 	global weibo_train_data
-	label_time = features_log[features_log.feature_name==features[0]].data_time
-	train_labels = weibo_train_data[(weibo_train_data['time']<=label_time[1]) \
-									& (weibo_train_data['time']>=label_time[0])][label]
+	train_labels = weibo_train_data[(weibo_train_data['time']<=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][1]) \
+									& (weibo_train_data['time']>=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][0])][label]
 
 	# train model
 	print "training model..."
@@ -105,7 +110,8 @@ def train(features,model_type,label,**model_parameters):
 		model_name += str(k)+'_'+str(v)
 	model_name += label	
 	model_address ='../models/'+model_name+'.model'
-	log = [model_name,features,model_type,label,model_parameters,{'coef':coef,'sos':sos,'vs':vs},model_address,elapsed]
+	log = [model_name,json.dumps(features.tolist()),model_type,label,json.dumps(model_parameters), \
+						json.dumps({'sos':sos,'vs':vs}),model_address,elapsed]
 	if model_name in train_log.model_name.tolist():
 		train_log[train_log.model_name==model_name] = log
 	else:
@@ -125,34 +131,32 @@ def train(features,model_type,label,**model_parameters):
 
 	return model
 
-def test(data_start,data_end,model_start,model_end,feature_type,model_type,evaluation=True):
-	global weibo_train_data
-	global weibo_predict_data
-	if data_start>'2014-12-31':
-		test_data = weibo_predict_data
-		test_data['context_clean'] = pd.Series.from_csv('../data/predict_context_clean.csv')
-	else:		
-		test_data = weibo_train_data
-		test_data['context_clean'] = pd.Series.from_csv('../data/train_context_clean.csv')
-	vectorizer = joblib.load('../others/'+feature_type+'_'+model_type+'_' \
-		+model_start+'_'+model_end+'.vectorizer')
-	test_features = vectorizer.transform(                  \
-						test_data[(test_data['time']<=data_end) 		\
-						& (test_data['time']>=data_start)].context_clean)
-	test_features = test_features.toarray()
+def test(features,fmodel,cmodel,lmodel,evaluation=True):
+
+	test_name = '_'.join(features.tolist())+'_'+fmodel+'_'+cmodel+'_'+lmodel
+	# load features
+	print "loading features..."
+	global features_log
+	test_features = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[0]].feature_address.tolist()[0])
+	if len(features) > 1:
+		for i in range(1,len(features)):
+			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address.tolist()[0])
+			test_features = pd.concat(test_features,tmp,axis=1)
 
 	if evaluation == True:
-		test_labels = test_data[(test_data['time']<=data_end) 		\
-							& (test_data['time']>=data_start)]               \
-							[['forward_count','comment_count','like_count']]
+		print "loading labels..."
+		global weibo_train_data
+		test_labels = weibo_train_data[(weibo_train_data['time']<=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][1]) \
+						& (weibo_train_data['time']>=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][0])] \
+						['forward_count','comment_count','like_count']
 
-	forward_model = joblib.load('../models/'+feature_type+'_'+model_type+'_forward_count_' \
-		+model_start+'_'+model_end+'.model')
-	comment_model = joblib.load('../models/'+feature_type+'_'+model_type+'_comment_count_' \
-		+model_start+'_'+model_end+'.model')
-	like_model = joblib.load('../models/'+feature_type+'_'+model_type+'_like_count_' \
-		+model_start+'_'+model_end+'.model')
+	print "loading models..."
+	global train_log
+	forward_model = joblib.load(train_log[train_log.model_name==fmodel].model_address.tolist()[0])
+	comment_model = joblib.load(train_log[train_log.model_name==cmodel].model_address.tolist()[0])
+	like_model = joblib.load(train_log[train_log.model_name==lmodel].model_address.tolist()[0])
 
+	print "predict..."
 	forward_predict = forward_model.predict(test_features)
 	forward_predict[forward_predict<0] = 0
 	forward_predict = forward_predict.round()
@@ -168,6 +172,7 @@ def test(data_start,data_end,model_start,model_end,feature_type,model_type,evalu
 							'like_predict':like_predict})
 
 	if evaluation == True: 
+		print 'evaluating...'
 		dev_f = (predict.forward_predict-test_labels.forward_count)/(test_labels.forward_count+5)
 		dev_c = (predict.comment_predict-test_labels.comment_count)/(test_labels.comment_count+3)
 		dev_l = (predict.like_predict-test_labels.like_count)/(test_labels.like_count+3)
@@ -181,20 +186,41 @@ def test(data_start,data_end,model_start,model_end,feature_type,model_type,evalu
 		precision = (count*precisions_sgn).sum()/count.sum()
 
 
-		print '====='+feature_type+'_'+model_type+'====='
-		print "Forward_count"
-		print "Residual sum of squares: %.2f" % \
-			np.mean((forward_predict - test_labels.forward_count) ** 2)
-		print 'Variance score: %.2f' % forward_model.score(test_features, test_labels.forward_count)
-		print "Comment_count"
-		print "Residual sum of squares: %.2f" % \
-			np.mean((comment_predict - test_labels.comment_count) ** 2)
-		print 'Variance score: %.2f' % comment_model.score(test_features, test_labels.comment_count)
-		print "Like_count"
-		print "Residual sum of squares: %.2f" % \
-			np.mean((like_predict - test_labels.like_count) ** 2)
-		print 'Variance score: %.2f' % like_model.score(test_features, test_labels.like_count)
+		fsos = np.mean((forward_predict - test_labels.forward_count) ** 2)
+		fvs = forward_model.score(test_features, test_labels.forward_count)
+		csos = np.mean((comment_predict - test_labels.comment_count) ** 2)
+		cvs = comment_model.score(test_features, test_labels.comment_count)
+		lsos = np.mean((like_predict - test_labels.like_count) ** 2)
+		lvs = like_model.score(test_features, test_labels.like_count)
+
+		print "writing logs..."
+		global test_log
+		log = [test_name,features.tolist(),fmodel,cmodel,lmodel,0.5*dev_f.mean(),0.25*dev_c.mean(),0.25*dev_l.mean(),precision, \
+				json.dumps({'fsos':fsos,'fvs':fvs,'csos':csos,'cvs':cvs,'lsos':lsos,'lvs':lvs})]
+		if test_name in test_log.test_name.tolist():
+			test_log[test_log.test_name==test_name] = log
+		else:
+			test_log.loc[len(test_log)] = log
+		test_log.to_csv('../logs/test.log')
+
+
+		print '====='+'Results'+'====='
+		print "-----Forward_count-----"
+		print "Residual sum of squares: %.2f" % fsos		
+		print 'Variance score: %.2f' % fvs
+		print "-----Comment_count-----"
+		print "Residual sum of squares: %.2f" % csos	
+		print 'Variance score: %.2f' % cvs
+		print "-----Like_count-----"
+		print "Residual sum of squares: %.2f" % lsos
+		print 'Variance score: %.2f' % lvs
+		print '------Total------'
+		print "dev_f:%f, dev_c:%f, dev_l:%f" % 0.5*dev_f.mean(), 0.25*dev_c.mean, 0.25*dev_l.mean()
 		print 'Total_precision:'+str(precision)
+	else:
+		print "genelizing results..."
+		global weibo_predict_data
+		genResult(test_name,pd.concat(weibo_predict_data[['uid','mid']],predict))
 
 	return predict
 
@@ -231,13 +257,15 @@ def BOW(data_time=['2014-07-01','2014-12-31'],vec_time=['2014-07-01','2014-12-31
 					& (data['time']>=data_time[0])].context_clean)
 	columns = ['BOW_'+str(i+1) for i in range(max_features)]
 	features = pd.DataFrame(features.toarray(),columns=columns)
+	# write log
 	feature_name = 'BOW_'+'_'.join(data_time)+'_'+'_'.join(vec_time)+'_'+str(max_features)
 	feature_address = '../features/'+ feature_name+'.feature'
 	features.to_csv(feature_address)
 	description = "Bag of Words in word count from "+str(data_time[0])+" to "+ \
 	data_time[1]+" using top "+str(max_features)+" words"
 
-	log = [feature_name,'BOW',data_time,{'max_features':max_features,'vec_time':vec_time},'I',feature_address,description]
+	log = [feature_name,'BOW',json.dumps(data_time),json.dumps({'max_features':max_features,'vec_time':vec_time}), \
+			'I',feature_address,description]
 	if feature_name in features_log.feature_name.tolist():
 		features_log[features_log.feature_name==feature_name] = log
 	else:

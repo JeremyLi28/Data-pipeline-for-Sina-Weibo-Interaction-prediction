@@ -14,3 +14,7 @@ results/*
 .ipynb_checkpoints/*
 
 features/*
+
+models/*
+
+others/*
