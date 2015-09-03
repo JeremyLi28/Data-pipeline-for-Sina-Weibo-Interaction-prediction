@@ -33,10 +33,13 @@ def loadData():
 	train_log.evaluation = train_log.evaluation.map(lambda x: json.loads(x))
 	global test_log
 	test_log = pd.DataFrame.from_csv('../logs/test.log')
+	test_log.features = test_log.features.map(lambda x: json.loads(x))
+	test_log.model_evaluation = test_log.model_evaluation.map(lambda x: json.loads(x))
 	global features_log
 	features_log = pd.DataFrame.from_csv('../logs/features.log')
 	features_log.data_time = features_log.data_time.map(lambda x: json.loads(x))
 	features_log.parameters = features_log.parameters.map(lambda x:json.loads(x))
+	features_log.feature_shape = features_log.feature_shape.map(lambda x:json.loads(x))
 
 def genResult(file, data):
 	data.to_csv('../results/'+file+'.csv',sep=',',float_format='%d')
@@ -83,7 +86,7 @@ def train(features,model_type,label,**model_parameters):
 	if len(features) > 1:
 		for i in range(1,len(features)):
 			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address.tolist()[0])
-			train_features = pd.concat(train_features,tmp,axis=1)
+			train_features = pd.concat([train_features,tmp],axis=1)
 
 	# load label
 	print "loading label..."
@@ -110,13 +113,8 @@ def train(features,model_type,label,**model_parameters):
 		model_name += str(k)+'_'+str(v)
 	model_name += label	
 	model_address ='../models/'+model_name+'.model'
-	log = [model_name,json.dumps(features),model_type,label,json.dumps(model_parameters), \
-						json.dumps({'sos':sos,'vs':vs}),model_address,elapsed]
-	if model_name in train_log.model_name.tolist():
-		train_log[train_log.model_name==model_name] = log
-	else:
-		train_log.loc[len(train_log)] = log
-	train_log.to_csv('../logs/train.log')
+	log = [model_name,features,model_type,label,model_parameters,{'sos':sos,'vs':vs},model_address,elapsed]
+	writeLog(log,"train_log")
 
 	# save model
 	print "saving model..."
@@ -141,7 +139,7 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 	if len(features) > 1:
 		for i in range(1,len(features)):
 			tmp = pd.DataFrame.from_csv(features_log[features_log.feature_name==features[i]].feature_address.tolist()[0])
-			test_features = pd.concat(test_features,tmp,axis=1)
+			test_features = pd.concat([test_features,tmp],axis=1)
 
 	if evaluation == True:
 		print "loading labels..."
@@ -195,13 +193,9 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 
 		print "writing logs..."
 		global test_log
-		log = [test_name,json.dumps(features),fmodel,cmodel,lmodel,0.5*dev_f.mean(),0.25*dev_c.mean(),0.25*dev_l.mean(),precision, \
-				json.dumps({'fsos':fsos,'fvs':fvs,'csos':csos,'cvs':cvs,'lsos':lsos,'lvs':lvs})]
-		if test_name in test_log.test_name.tolist():
-			test_log[test_log.test_name==test_name] = log
-		else:
-			test_log.loc[len(test_log)] = log
-		test_log.to_csv('../logs/test.log')
+		log = [test_name,features,fmodel,cmodel,lmodel,0.5*dev_f.mean(),0.25*dev_c.mean(),0.25*dev_l.mean(),precision, \
+				{'fsos':fsos,'fvs':fvs,'csos':csos,'cvs':cvs,'lsos':lsos,'lvs':lvs}]
+		writeLog(log,"test_log")
 
 
 		print '====='+'Results'+'====='
@@ -228,6 +222,44 @@ def sgn(x):
 	x[x>0] = 1
 	x[x<=0] = 0
 	return x
+
+def writeLog(log,log_type):
+	global train_log
+	global test_log
+	global features_log
+	if log_type == "train_log":
+		if log[0] in train_log.model_name.tolist():
+			train_log.loc[train_log[train_log.model_name==log[0]].index.values[0]] = log
+		else:
+			train_log.loc[len(train_log)] = log
+		tmp_train_log = train_log
+		tmp_train_log.features = tmp_train_log.features.map(lambda x: json.dumps(x))
+		tmp_train_log.model_parameters = tmp_train_log.model_parameters.map(lambda x: json.dumps(x))
+		tmp_train_log.evaluation = tmp_train_log.evaluation.map(lambda x: json.dumps(x))
+		tmp_train_log.to_csv('../logs/train.log')
+	elif log_type == "test_log":
+		if log[0] in test_log.test_name.tolist():
+			test_log.loc[test_log[test_log.test_name==log[0]].index.values[0]] = log
+		else:
+			test_log.loc[len(test_log)] = log
+		tmp_test_log = test_log
+		tmp_test_log.features = tmp_test_log.features.map(lambda x: json.dumps(x))
+		tmp_test_log.model_evaluation = tmp_test_log.model_evaluation.map(lambda x: json.dumps(x))
+		tmp_test_log.to_csv('../logs/test.log')
+	elif log_type=="features_log":
+		if log[0] in features_log.feature_name.tolist():
+			features_log.loc[features_log[features_log.feature_name==log[0]].index.values[0]] = log
+		else:
+			features_log.loc[len(features_log)] = log
+		tmp_features_log = features_log
+		tmp_features_log.data_time = tmp_features_log.data_time.map(lambda x: json.dumps(x))
+		tmp_features_log.parameters = tmp_features_log.parameters.map(lambda x:json.dumps(x))
+		tmp_features_log.feature_shape = tmp_features_log.feature_shape.map(lambda x:json.dumps(x))
+		tmp_features_log.to_csv('../logs/features.log')
+
+
+
+
 
 def BOW(data_time=['2014-07-01','2014-12-31'],vec_time=['2014-07-01','2014-12-31'],max_features=100,fit=False):
 	global weibo_train_data
@@ -264,16 +296,37 @@ def BOW(data_time=['2014-07-01','2014-12-31'],vec_time=['2014-07-01','2014-12-31
 	description = "Bag of Words in word count from "+str(data_time[0])+" to "+ \
 	data_time[1]+" using top "+str(max_features)+" words"
 
-	log = [feature_name,'BOW',json.dumps(data_time),json.dumps({'max_features':max_features,'vec_time':vec_time}), \
-			'I',feature_address,description]
-	if feature_name in features_log.feature_name.tolist():
-		features_log[features_log.feature_name==feature_name] = log
-	else:
-		features_log.loc[len(features_log)] = log
-	features_log.to_csv('../logs/features.log')
+	log = [feature_name,'BOW',data_time,{'max_features':max_features,'vec_time':vec_time},'I',feature_address,description,list(features.values.shape)]
+	writeLog(log,"features_log")
 
 	return features
 
+def UAVG(data_time=['2014-07-01','2014-12-31']):
+	global weibo_train_data
+	global weibo_predict_data
+	global features_log
+	if data_time[0]>'2014-12-31':
+		data = weibo_predict_data
+	else:		
+		data = weibo_train_data
+	feature_data = data[(data['time']>=data_time[0]) & (data['time']<=data_time[1])]
+	ug = feature_data.groupby('uid')
+	uavg = ug.sum()/ug.count()[['forward_count','comment_count','like_count']]
+	uavg=uavg.applymap(lambda x:round(x))
+	uavg.columns = ['UAVG_forward_count'+'_'+'_'.join(data_time),'UAVG_comment_count'+'_'+'_'.join(data_time), \
+					'UAVG_like_count'+'_'+'_'.join(data_time)]
+	features = pd.merge(feature_data[['uid']],uavg,how="inner",left_on='uid',right_index=True)
+	features = features[['UAVG_forward_count'+'_'+'_'.join(data_time),'UAVG_comment_count'+'_'+'_'.join(data_time), \
+					'UAVG_like_count'+'_'+'_'.join(data_time)]]
+	features.index = range(len(features))
+	feature_name = "UAVG"+'_'+'_'.join(data_time)
+	feature_address = '../features/'+feature_name+'.feature'
+	features.to_csv(feature_address)
+	description = "User's average forward/comment/like count during"+'-'.join(data_time)
+	log = [feature_name,'UAVG',data_time,{},'U',feature_address,description,list(features.values.shape)]
+	writeLog(log,"features_log")
+
+	return features
 
 
 
