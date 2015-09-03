@@ -105,12 +105,12 @@ def train(features,model_type,label,**model_parameters):
 	coef = model.coef_
 	sos = np.mean((model.predict(train_features) - train_labels) ** 2)
 	vs = model.score(train_features, train_labels)
-	model_name = '_'.join(features.tolist())+'_'+model_type+'_'
+	model_name = '_'.join(features)+'_'+model_type+'_'
 	for k, v in model_parameters:
 		model_name += str(k)+'_'+str(v)
 	model_name += label	
 	model_address ='../models/'+model_name+'.model'
-	log = [model_name,json.dumps(features.tolist()),model_type,label,json.dumps(model_parameters), \
+	log = [model_name,json.dumps(features),model_type,label,json.dumps(model_parameters), \
 						json.dumps({'sos':sos,'vs':vs}),model_address,elapsed]
 	if model_name in train_log.model_name.tolist():
 		train_log[train_log.model_name==model_name] = log
@@ -133,7 +133,7 @@ def train(features,model_type,label,**model_parameters):
 
 def test(features,fmodel,cmodel,lmodel,evaluation=True):
 
-	test_name = '_'.join(features.tolist())+'_'+fmodel+'_'+cmodel+'_'+lmodel
+	test_name = '_'.join(features)+'_'+fmodel+'_'+cmodel+'_'+lmodel
 	# load features
 	print "loading features..."
 	global features_log
@@ -148,7 +148,7 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 		global weibo_train_data
 		test_labels = weibo_train_data[(weibo_train_data['time']<=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][1]) \
 						& (weibo_train_data['time']>=features_log[features_log.feature_name==features[0]].data_time.tolist()[0][0])] \
-						['forward_count','comment_count','like_count']
+						[['forward_count','comment_count','like_count']]
 
 	print "loading models..."
 	global train_log
@@ -156,7 +156,7 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 	comment_model = joblib.load(train_log[train_log.model_name==cmodel].model_address.tolist()[0])
 	like_model = joblib.load(train_log[train_log.model_name==lmodel].model_address.tolist()[0])
 
-	print "predict..."
+	print "predicting..."
 	forward_predict = forward_model.predict(test_features)
 	forward_predict[forward_predict<0] = 0
 	forward_predict = forward_predict.round()
@@ -195,7 +195,7 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 
 		print "writing logs..."
 		global test_log
-		log = [test_name,features.tolist(),fmodel,cmodel,lmodel,0.5*dev_f.mean(),0.25*dev_c.mean(),0.25*dev_l.mean(),precision, \
+		log = [test_name,json.dumps(features),fmodel,cmodel,lmodel,0.5*dev_f.mean(),0.25*dev_c.mean(),0.25*dev_l.mean(),precision, \
 				json.dumps({'fsos':fsos,'fvs':fvs,'csos':csos,'cvs':cvs,'lsos':lsos,'lvs':lvs})]
 		if test_name in test_log.test_name.tolist():
 			test_log[test_log.test_name==test_name] = log
@@ -215,7 +215,7 @@ def test(features,fmodel,cmodel,lmodel,evaluation=True):
 		print "Residual sum of squares: %.2f" % lsos
 		print 'Variance score: %.2f' % lvs
 		print '------Total------'
-		print "dev_f:%f, dev_c:%f, dev_l:%f" % 0.5*dev_f.mean(), 0.25*dev_c.mean, 0.25*dev_l.mean()
+		print "dev_f:%f, dev_c:%f, dev_l:%f" % (0.5*dev_f.mean(), 0.25*dev_c.mean(), 0.25*dev_l.mean())
 		print 'Total_precision:'+str(precision)
 	else:
 		print "genelizing results..."
