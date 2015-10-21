@@ -1,7 +1,7 @@
 # Sina Weibo Interaction-prediction
 ## Introduction
 The Competition's detail can be find [here](http://tianchi.aliyun.com/competition/introduction.htm?spm=5176.100066.333.11.Til5AJ&raceId=5&_lang=en_US)  
-Basically the competition is about analyze the users' behaviors and the message the post on the Chinese micro-blog platform, and predict the number of forward, comment and like on each message.
+Basically the competition is about analyzing users' behaviors and messages they post on the Chinese micro-blog platform, and predict the number of forwarding, comment and like on each message.
 
 This project mainly use python and pandas.
 
